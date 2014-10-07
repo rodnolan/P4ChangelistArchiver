@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:TitleWindow xmlns:fx="http://ns.adobe.com/mxml/2009" 
+			   xmlns:s="library://ns.adobe.com/flex/spark" 
+			   xmlns:mx="library://ns.adobe.com/flex/mx"
+			   title="{popupTitle}">
+	<fx:Metadata>
+		[Event(name="login", type="events.LoginEvent")]
+	</fx:Metadata>
+	
+	<s:layout>
+		<s:FormLayout/>
+	</s:layout>
+
+	<fx:Script>
+		<![CDATA[
+			import events.LoginEvent;
+			
+			import mx.managers.PopUpManager;
+			
+			[Bindable]
+			public var popupTitle:String;
+			
+			private function loginButton_clickHandler(event:MouseEvent):void {
+				var le:LoginEvent = new LoginEvent("login", txtUserName.text, txtPassword.text); 
+				dispatchEvent(le);
+				PopUpManager.removePopUp(this);
+			}
+		]]>
+	</fx:Script>
+	
+	<s:Form>
+		<s:FormItem label="username">
+			<s:TextInput id="txtUserName" />
+		</s:FormItem>
+		<s:FormItem label="password">
+			<s:TextInput id="txtPassword" displayAsPassword="true" />
+		</s:FormItem>
+		<s:FormItem>
+			<s:Button label="Login" click="loginButton_clickHandler(event)" />
+		</s:FormItem>
+	</s:Form>
+	
+</s:TitleWindow>

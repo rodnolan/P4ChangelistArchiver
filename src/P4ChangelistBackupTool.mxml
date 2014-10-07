@@ -1,0 +1,466 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:WindowedApplication xmlns:fx="http://ns.adobe.com/mxml/2009" 
+					   xmlns:s="library://ns.adobe.com/flex/spark" 
+					   xmlns:mx="library://ns.adobe.com/flex/mx"
+					   creationComplete="creationCompleteHandler(event)"
+					   minHeight="420"
+					   minWidth="996">	
+	<s:layout>
+		<s:VerticalLayout gap="10" paddingLeft="10" paddingRight="10" paddingTop="10" paddingBottom="10" />
+	</s:layout>
+	<fx:Script>
+		<![CDATA[
+			import events.LoginEvent;
+			
+			import flash.utils.flash_proxy;
+			
+			import mx.collections.ArrayCollection;
+			import mx.containers.TitleWindow;
+			import mx.events.FlexEvent;
+			import mx.managers.PopUpManager;
+			
+			import spark.events.GridSelectionEvent;
+			import spark.events.IndexChangeEvent;
+			
+			import vo.ChangeList;
+			import vo.ChangelistFile;
+			import vo.ClientInfo;
+			import vo.Executables;
+			import vo.Workspace;
+			
+			[Bindable]
+			private var changelists:ArrayCollection;
+			
+			[Bindable]
+			private var changelistFiles:ArrayCollection;
+			private var currentDepotFile:ChangelistFile;
+			[Bindable]
+			private var processingChangelistFiles:Boolean;
+			
+			[Bindable]
+			private var workspaces:ArrayCollection;
+			[Bindable]
+			private var clientInfo:ClientInfo;
+			
+			[Bindable]
+			private var selectedChangelist:ChangeList;
+			
+			[Bindable]
+			private var basepath:String;
+			
+			[Bindable]
+			private var backupFolder:String;
+			
+			[Bindable]
+			private var userName:String = "rnolan";
+			[Bindable]
+			private var passWord:String;
+
+			private var loginPopup:LoginPopup;
+			
+			private var p4Exe:File; 
+			private var slashConverter:File; 
+			private var p4Login:File; 
+			private var backupChangelist:File; 
+			
+			private var exes:Executables = new Executables(); 
+			
+			private var process:NativeProcess; 
+			private var processQueue:Array; 
+
+			private var isLoggedIn:Boolean; 
+			
+			private static var CMD_CHECK_LOGIN_STATUS:String = "checkLoginStatus";
+			private static var CMD_LOGIN:String = "login";
+			private static var CMD_GET_CHANGES:String = "getCLs";
+			private static var CMD_GET_WORKSPACES:String = "getClients";
+			private static var CMD_GET_INFO:String = "getInfo";
+			private static var CMD_DESCRIBE_CL:String = "describeCL";
+			private static var CMD_RESOLVE_PATHS:String = "resolvePaths";
+			private static var CMD_CLEAN_PATHS:String = "cleanPaths";
+			private static var CMD_BACKUP_CHANGELIST_FILES:String = "backupChangelistFiles";
+			
+			private var currentCommand:String;
+						
+			private function creationCompleteHandler(event:FlexEvent):void {
+				
+				if (!verifyExecutables()) {
+					throw new Error("one of the helper executables is missing");
+				}
+				
+				Executables.addCommand(CMD_CHECK_LOGIN_STATUS, Executables.P4);
+				Executables.addCommand(CMD_LOGIN, Executables.P4_LOGIN);
+				Executables.addCommand(CMD_GET_CHANGES, Executables.P4);
+				Executables.addCommand(CMD_GET_WORKSPACES, Executables.P4);
+				Executables.addCommand(CMD_GET_INFO, Executables.P4);
+				Executables.addCommand(CMD_DESCRIBE_CL, Executables.P4);
+				Executables.addCommand(CMD_RESOLVE_PATHS, Executables.P4);
+				Executables.addCommand(CMD_CLEAN_PATHS, Executables.SLASH_CONVERTER);
+				Executables.addCommand(CMD_BACKUP_CHANGELIST_FILES, Executables.BACKUP_CHANGELIST);
+				
+				processQueue = new Array();
+				callCommand(CMD_CHECK_LOGIN_STATUS);
+			}
+			
+			private function verifyExecutables():Boolean {
+				p4Exe = File.applicationDirectory.resolvePath("tools\\p4.exe");
+				slashConverter = File.applicationDirectory.resolvePath("tools\\convertBackslashes.cmd");
+				p4Login = File.applicationDirectory.resolvePath("tools\\p4Login.cmd");
+				backupChangelist = File.applicationDirectory.resolvePath("tools\\backupChangelist.cmd");
+				
+				if (!p4Exe.exists) {
+					return false;
+				} else {
+					Executables.addExe(p4Exe, Executables.P4);
+				}
+				if (!slashConverter.exists) {
+					return false;
+				} else {
+					Executables.addExe(slashConverter, Executables.SLASH_CONVERTER);
+				}
+				if (!p4Login.exists) {
+					return false;
+				} else {
+					Executables.addExe(p4Login, Executables.P4_LOGIN);
+				}
+				if (!backupChangelist.exists) {
+					return false;
+				} else {
+					Executables.addExe(backupChangelist, Executables.BACKUP_CHANGELIST);
+				}
+				
+				return true;
+			}
+			
+			private function callCommand(commandToExecute:String):void {
+				process = new NativeProcess();
+				
+				process.addEventListener(ProgressEvent.STANDARD_OUTPUT_DATA, nativeProcessResult);
+				process.addEventListener(Event.STANDARD_ERROR_CLOSE, nativeProcessCloseErrorStream);
+				process.addEventListener(IOErrorEvent.STANDARD_ERROR_IO_ERROR, nativeProcessError);
+				process.addEventListener(IOErrorEvent.STANDARD_INPUT_IO_ERROR, nativeProcessError);
+				process.addEventListener(IOErrorEvent.STANDARD_OUTPUT_IO_ERROR, nativeProcessError);
+				process.addEventListener(ProgressEvent.STANDARD_ERROR_DATA, nativeProcessError);
+				process.addEventListener(NativeProcessExitEvent.EXIT, nativeProcessExit);
+				
+				var exe:File = Executables.getExeForCommand(commandToExecute);
+				if (!exe.exists) {
+					throw new Error("required executable not found");
+				}
+				
+				var nativeProcessStartupInfo:NativeProcessStartupInfo = new NativeProcessStartupInfo();
+				nativeProcessStartupInfo.executable = exe;
+				
+				var processArgs:Vector.<String> = new Vector.<String>();
+				switch (commandToExecute) {
+					case CMD_CHECK_LOGIN_STATUS :
+						// p4 login -s
+						processArgs[ 0 ] = "login";
+						processArgs[ 1 ] = "-s";
+						break;
+					case CMD_LOGIN :
+						// p4 login myPassword
+						// Enter Password:
+						// figure out how to provide an answer to the prompt "Enter Password:"
+						// p4Login myPassword
+						processArgs[ 0 ] = passWord;
+						break;
+					case CMD_GET_CHANGES :
+						// p4 changes -u rnolan -s pending
+						processArgs[ 0 ] = "changes";
+						processArgs[ 1 ] = "-u";
+						processArgs[ 2 ] = userName;
+						processArgs[ 3 ] = "-s";
+						processArgs[ 4 ] = "pending";
+						break;
+					case CMD_GET_WORKSPACES : 
+						// p4 workspaces -u rnolan
+						processArgs[ 0 ] = "workspaces";
+						processArgs[ 1 ] = "-u";
+						processArgs[ 2 ] = userName;
+						break;
+					case CMD_GET_INFO : 
+						// p4 info
+						processArgs[ 0 ] = "info";
+						break;
+					case CMD_DESCRIBE_CL :
+						// p4 describe 119038
+						processArgs[ 0 ] = "describe";
+						processArgs[ 1 ] = selectedChangelist.number;
+						processingChangelistFiles = true;
+						break;
+					case CMD_RESOLVE_PATHS :
+						
+						//p4 where //NGST/trunk/app/client/flex/wiTECHModuleVW/src/AppVW-app.xml
+						//  //NGST/trunk/app/client/flex/wiTECHModuleVW/src/AppVW-app.xml 
+						//  //RodNolanWiTECH/NGST/flex/wiTECHModuleVW/src/AppVW-app.xml 
+						//  C:/P4/RodNolanWiTECH\NGST\flex\wiTECHModuleVW\src\AppVW-app.xml
+						//
+						
+						//p4 where //NGST/trunk/app/client/flex/wiTECHModuleVW/src/AppVW-app.xml | sed -e s/\\/\//g
+						//  //NGST/trunk/app/client/flex/wiTECHModuleVW/src/AppVW-app.xml 
+						//  //RodNolanWiTECH/NGST/flex/wiTECHModuleVW/src/AppVW-app.xml 
+						//  C:/P4/RodNolanWiTECH/NGST/flex/wiTECHModuleVW/src/AppVW-app.xml
+						//
+						
+						// but the "| sed" part doesn't qualify as an argument to p4
+						// so I need to create a middle-man script to handle this
+						if (!currentDepotFile) {
+							currentDepotFile = changelistFiles.getItemAt(0) as ChangelistFile;
+						}
+						processArgs[ 0 ] = "where";
+						processArgs[ 1 ] = currentDepotFile.depotPath;
+						break;
+					case CMD_CLEAN_PATHS : 
+						// convertBackslashes.cmd C:/P4/RodNolanWiTECH\NGST\flex\wiTECHModuleVW\src\AppVW-app.xml
+//						if (!currentDepotFile || changelistFiles.getItemIndex(currentDepotFile) != 0) {
+//							currentDepotFile = changelistFiles.getItemAt(0) as ChangelistFile;
+//						}
+						processArgs[ 0 ] = currentDepotFile.localPath;
+						break;
+					case CMD_BACKUP_CHANGELIST_FILES :
+						trace('about to backup the files in the selected changelist')
+						// set src=C:\P4\RodNolanWiTECH\NGST\flex
+						// set dest=C:\Users\rodn\Desktop\3170-latest-today
+						// echo f | xcopy /f /y %src%\wiTECHModuleChrysler\src\wde-services.xml %dest%\wiTECHModuleChrysler\src\wde-services.xml
+						break;
+				}
+				currentCommand = commandToExecute;
+				nativeProcessStartupInfo.arguments = processArgs;
+				process.start(nativeProcessStartupInfo);
+			}
+			
+			public function nativeProcessResult(event:ProgressEvent):void {
+				var result:String = process.standardOutput.readUTFBytes(process.standardOutput.bytesAvailable);
+				trace("nativeProcessResult() result = {0}" + result);
+				var arr:Array; 
+				switch (currentCommand) {
+					case CMD_CHECK_LOGIN_STATUS :
+						if (result.indexOf("ticket expires") > -1) {
+							isLoggedIn = true;
+							processQueue.push(CMD_GET_CHANGES);
+						} else if (result.indexOf("invalid or unset") > -1) {
+							showLoginPrompt();
+						}
+						break;
+					case CMD_LOGIN :
+						if (result.indexOf("logged in") > -1) {
+							isLoggedIn = true;
+							processQueue.push(CMD_GET_CHANGES);
+						}
+						break;
+					case CMD_GET_CHANGES :
+						arr = result.split("\r\n");
+						arr.forEach(function (item:*, index:int, array:Array):void{
+							array[index] = new ChangeList(item);
+						});
+						changelists = new ArrayCollection(arr);
+						processQueue.push(CMD_GET_WORKSPACES);
+						processQueue.push(CMD_GET_INFO);
+						break;
+					case CMD_GET_WORKSPACES :
+						arr = result.split("\r\n");
+						arr.pop();
+						arr.forEach(function (item:*, index:int, array:Array):void{
+							array[index] = new Workspace(item);
+						});
+						workspaces = new ArrayCollection(arr);
+						break;
+					case CMD_GET_INFO :
+						arr = result.split("\r\n");
+						arr.splice(4);
+						clientInfo = new ClientInfo(arr);
+						break;
+					case CMD_DESCRIBE_CL :
+						arr = result.split("\r\n").reverse();
+						var idx:int = arr.indexOf("Affected files ...");
+						arr.splice(idx-1);
+						arr.reverse().splice(-2);
+						arr.forEach(function (item:*, index:int, array:Array):void{
+							array[index] = new ChangelistFile(item);
+						});
+						changelistFiles = new ArrayCollection(arr);
+						processQueue.push(CMD_RESOLVE_PATHS);
+						break;
+					case CMD_RESOLVE_PATHS :
+						arr = result.split(" ");
+						var localPath:String = arr.pop().replace("\r\n", "");
+						currentDepotFile.localPath = localPath;
+						var currentIdx:int = changelistFiles.getItemIndex(currentDepotFile);
+						if (currentIdx != changelistFiles.length-1) {
+							currentDepotFile = changelistFiles.getItemAt(++currentIdx) as ChangelistFile;
+							currentCommand = CMD_RESOLVE_PATHS;
+							processQueue.push(CMD_RESOLVE_PATHS);
+						} else {
+							currentCommand = CMD_CLEAN_PATHS;
+							if (!currentDepotFile || changelistFiles.getItemIndex(currentDepotFile) != 0) {
+								currentDepotFile = changelistFiles.getItemAt(0) as ChangelistFile;
+							}
+							processQueue.push(CMD_CLEAN_PATHS);
+						}
+						break;
+					case CMD_CLEAN_PATHS : 
+						currentDepotFile.localPath = result.replace("\r\n", "");
+						currentDepotFile.localPathTokens = currentDepotFile.localPath.split("/");
+						var currentIdx:int = changelistFiles.getItemIndex(currentDepotFile);
+						if (currentIdx != changelistFiles.length-1) {
+							currentDepotFile = changelistFiles.getItemAt(++currentIdx) as ChangelistFile;
+							currentCommand = CMD_CLEAN_PATHS;
+							processQueue.push(CMD_CLEAN_PATHS);
+						} else {
+							processingChangelistFiles = false;
+						}
+						break;
+				}				
+			}
+			public function nativeProcessCloseErrorStream(event:Object):void {
+				trace("nativeProcessCloseErrorStream()");			
+			}
+			public function nativeProcessExit(event:NativeProcessExitEvent):void {
+				trace("nativeProcessExit code: " + event.exitCode);
+				removeListeners();
+				if (processQueue.length) {
+					var cmdToExecute:String = processQueue.shift(); 
+					callCommand(cmdToExecute);
+				}
+			}
+			public function nativeProcessError(event:Object):void {
+				trace("nativeProcessError() type = {0}", event.type);
+				var result:String = process.standardError.readUTFBytes(process.standardError.bytesAvailable);
+				trace(result);
+				removeListeners();
+				
+				if ( currentCommand == CMD_CHECK_LOGIN_STATUS && (result.indexOf("invalid or unset") || result.indexOf("Password invalid")) ) {
+					showLoginPrompt();
+				}
+			}
+			
+			public function removeListeners():void {
+				process.removeEventListener(ProgressEvent.STANDARD_OUTPUT_DATA, nativeProcessResult);
+				process.removeEventListener(Event.STANDARD_ERROR_CLOSE, nativeProcessCloseErrorStream);
+				process.removeEventListener(Event.STANDARD_ERROR_CLOSE, nativeProcessError);
+				process.removeEventListener(IOErrorEvent.STANDARD_ERROR_IO_ERROR, nativeProcessError);
+				process.removeEventListener(IOErrorEvent.STANDARD_INPUT_IO_ERROR, nativeProcessError);
+				process.removeEventListener(IOErrorEvent.STANDARD_OUTPUT_IO_ERROR, nativeProcessError);
+				process.removeEventListener(ProgressEvent.STANDARD_ERROR_DATA, nativeProcessError);
+				process.removeEventListener(NativeProcessExitEvent.EXIT, nativeProcessExit);
+				process = null;
+			}
+
+			
+			private function showLoginPrompt():void {
+				loginPopup = PopUpManager.createPopUp(this, LoginPopup, true) as LoginPopup;
+				PopUpManager.centerPopUp(loginPopup);
+
+				loginPopup.popupTitle = "Please login to Perforce";
+				loginPopup.addEventListener(LoginEvent.TYPE, doLogin);
+			}
+			private function doLogin(event:LoginEvent):void {
+				//processQueue.push(CMD_LOGIN);
+				//callCommand(processQueue.shift());
+				
+				userName = event.un;
+				passWord = event.pw;
+				callCommand(CMD_LOGIN);
+				
+				event.target.removeEventListener(LoginEvent.TYPE, doLogin);
+			}
+
+			private function changelists_selectionChangeHandler(event:GridSelectionEvent):void {
+				selectedChangelist = event.target.selectedItem as ChangeList;
+				callCommand(CMD_DESCRIBE_CL);
+			}
+			private function getStarted_creationCompleteHandler(event:FlexEvent):void {
+				
+			}
+			private function changelists_creationCompleteHandler(event:FlexEvent):void {
+				
+			}
+			private function pathsManager_creationCompleteHandler(event:FlexEvent):void {
+				
+			}
+
+			private function browseForBackupFolder_clickHandler(event:MouseEvent):void {
+				var file:File = new File();
+				file.addEventListener(Event.SELECT, backupFolderSelected);
+				file.browseForDirectory("Please specify where your changelist files should be stored.");
+			}
+			private function backupFolderSelected(evt:Event):void {
+				backupFolder = File(evt.currentTarget).nativePath;
+			}
+			
+			protected function backupFiles_clickHandler(event:MouseEvent):void {
+				trace(changelistFiles.source);
+				var commonPath:String = "";
+				var currentTokenIndex:int = 0;
+				
+				// use the first item in the list as the baseline
+				var firstFile:ChangelistFile = changelistFiles.getItemAt(0) as ChangelistFile;
+				
+				var tokensAtCurrentIndexMatch:Boolean = true;
+				do {
+					// get the indexed token from first, always the first, file in the list
+					var tokenAtIndexFromFirstFile:String = firstFile.getPathTokenAtIndex(currentTokenIndex);
+					if (tokenAtIndexFromFirstFile == "") {
+						tokensAtCurrentIndexMatch = false;
+						break;
+					}
+					
+					// compare that first item's token with the token at the same position for each of the remaining items
+					for (var i:int=1; i < changelistFiles.length; i++) {
+						var currentFile:ChangelistFile = changelistFiles.getItemAt(i) as ChangelistFile;
+						var currentFileCurrentToken:String = currentFile.getPathTokenAtIndex(currentTokenIndex);
+						// if the currentFile does not have a token at the given index, or if it does but it isn't a match for the first file's token, stop looping
+						if (currentFileCurrentToken == "" || currentFileCurrentToken != tokenAtIndexFromFirstFile ) {
+							tokensAtCurrentIndexMatch = false;
+							break;
+						}
+					}
+					if (tokensAtCurrentIndexMatch) {
+						commonPath += tokenAtIndexFromFirstFile + "/";
+						currentTokenIndex++;
+					}
+				} while (tokensAtCurrentIndexMatch) 
+				
+				trace("commonPath: " + commonPath);
+				selectedChangelist.commonRootPath = commonPath; 
+			}
+		]]>
+	</fx:Script>
+		
+	<mx:TabBar dataProvider="{mainVS}" />
+	<mx:ViewStack id="mainVS" width="100%" height="100%">
+		
+		<s:NavigatorContent id="vChangelists" label="List your changelists" creationComplete="changelists_creationCompleteHandler(event)">
+			<s:layout>
+				<s:VerticalLayout />
+			</s:layout>
+			<s:Label text="your pending changelists" />
+			<s:DataGrid dataProvider="{changelists}" width="100%" height="100%" selectionChange="changelists_selectionChangeHandler(event)">
+				<s:columns>
+					<s:ArrayList>
+						<s:GridColumn dataField="number" />
+						<s:GridColumn dataField="description" />
+						<s:GridColumn dataField="status" />
+						<s:GridColumn dataField="date" />
+					</s:ArrayList>
+				</s:columns>
+			</s:DataGrid>
+				<s:Label text="the files in changelist #{selectedChangelist.number}" />
+				<s:DataGrid id="dgChangeListFiles" dataProvider="{changelistFiles}" width="100%" height="100%" enabled="{!processingChangelistFiles}">
+					<s:columns>
+						<s:ArrayList>
+							<s:GridColumn dataField="depotPath" />
+							<s:GridColumn dataField="localPath" />
+							<s:GridColumn dataField="revisionNumber" width="75" />
+							<s:GridColumn dataField="action" width="75" />
+						</s:ArrayList>
+					</s:columns>
+				</s:DataGrid>
+				<s:Label text="specify where you want the files to be saved: {backupFolder}" />
+				<s:Button label="Select" click="browseForBackupFolder_clickHandler(event)" />
+				<s:Button label="Back Up Files" click="backupFiles_clickHandler(event)" enabled="{backupFolder.length > 3}" />
+			
+		</s:NavigatorContent>
+	</mx:ViewStack>
+</s:WindowedApplication>
