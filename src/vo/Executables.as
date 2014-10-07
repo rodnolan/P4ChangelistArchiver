@@ -7,6 +7,7 @@ package vo {
 		public static var SLASH_CONVERTER:String = "slashConverter";
 		public static var P4_LOGIN:String = "p4Login";
 		public static var BACKUP_CHANGELIST:String = "backupChangelist";
+		public static var COPY_ALL_CHANGELIST_FILES:String = "copyAllChangelistFiles";
 	
 		public static var exes:Dictionary = new Dictionary();
 		public static function addExe(file:File, key:String):void {
