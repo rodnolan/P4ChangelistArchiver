@@ -6,7 +6,7 @@ package vo {
 		public var depotPath:String;
 		public var localPath:String;
 		public var localPathTokens:Array;
-		public var backupPath:String;
+		private var _archivePath:String;
 		public var revisionNumber:String;
 		public var action:String;
 		public var cmdData:String;
@@ -16,6 +16,14 @@ package vo {
 			this.parse();
 		}
 				
+		public function get archivePath():String {
+			return _archivePath;
+		}
+
+		public function cleanArchivePath(lengthOfCommonPath:int):void {
+			_archivePath = localPath.substring(lengthOfCommonPath);
+		}
+
 		public function parse():void {
 			var tokens:Array = cmdData.split(ChangeList.delim);
 			this.depotPath = tokens [0];
@@ -41,6 +49,16 @@ package vo {
 			}
 			return tokenToReturn;
 		}
-
+		
+		public function getBackupCommand(baseFolder:String):String {			
+			var destPath:String = baseFolder.replace( /\\/g, '/') + "/";
+			
+			
+			var lp:String = localPath.replace( /\//ig, "\\" );
+			var dp:String = destPath.replace( /\//ig, "\\" );
+			var ap:String = archivePath.replace( /\//ig, "\\" );
+			
+			return "echo f | xcopy /f /y " + lp + " " + dp + ap + "\n";
+		}
 	}
 }
