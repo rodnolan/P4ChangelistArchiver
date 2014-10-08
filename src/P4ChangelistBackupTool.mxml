@@ -82,6 +82,7 @@
 			private static var CMD_CLEAN_PATHS:String = "cleanPaths";
 			private static var CMD_BACKUP_CHANGELIST_FILES:String = "backupChangelistFiles";
 			private static var CMD_COPY_ALL_CHANGELIST_FILES:String = "copyAllChangelistFiles";
+			private static var CMD_CREATE_ZIP_FILE:String = "createZipFile";
 			
 			private var currentCommand:String;
 						
@@ -100,7 +101,7 @@
 				Executables.addCommand(CMD_RESOLVE_PATHS, Executables.P4);
 				Executables.addCommand(CMD_CLEAN_PATHS, Executables.SLASH_CONVERTER);
 				Executables.addCommand(CMD_BACKUP_CHANGELIST_FILES, Executables.BACKUP_CHANGELIST);
-				Executables.addCommand(CMD_COPY_ALL_CHANGELIST_FILES, Executables.BACKUP_CHANGELIST);
+				Executables.addCommand(CMD_COPY_ALL_CHANGELIST_FILES, Executables.COPY_ALL_CHANGELIST_FILES);
 				
 				
 				processQueue = new Array();
@@ -138,13 +139,12 @@
 					Executables.addExe(backupChangelist, Executables.BACKUP_CHANGELIST);
 				}
 				
-				// don't have to check copyAllCmdFile because it will be created on the fly anyway
+				// don't have to check if copyAllCmdFile exists because it will be created on the fly
 				if (!copyAllCmdFile.exists) {
 					createCopyCmd(copyAllCmdFile);
-					//return false;
+					Executables.addExe(copyAllCmdFile, Executables.COPY_ALL_CHANGELIST_FILES);
 				} else {
-					createCopyCmd(copyAllCmdFile);
-					Executables.addExe(backupChangelist, Executables.BACKUP_CHANGELIST);
+					Executables.addExe(copyAllCmdFile, Executables.COPY_ALL_CHANGELIST_FILES);
 				}
 				
 				return true;
@@ -152,17 +152,7 @@
 			
 			private function createCopyCmd(file:File, contents:String="This file is generated at runtime"):void {
 				var stream:FileStream = new FileStream();
-				//var bytes:ByteArray = new ByteArray();
-				
 				try {
-					//bytes.writeMultiByte(contents, "utf-8");
-//					stream.addEventListener(Event.COMPLETE, function(event:Event):void {
-//						stream.writeUTFBytes(contents);
-//						stream.close();					
-//					});
-//					stream.openAsync(file, FileMode.WRITE);
-					
-					
 					stream.open(file, FileMode.WRITE);
 					stream.writeUTFBytes(contents);
 					stream.close();					
@@ -259,10 +249,14 @@
 						processArgs[ 0 ] = currentDepotFile.localPath;
 						break;
 					case CMD_BACKUP_CHANGELIST_FILES :
-						trace('about to backup the files in the selected changelist')
+						trace('about to backup a file from the selected changelist');
 						// set src=C:\P4\RodNolanWiTECH\NGST\flex
 						// set dest=C:\Users\rodn\Desktop\3170-latest-today
 						// echo f | xcopy /f /y %src%\wiTECHModuleChrysler\src\wde-services.xml %dest%\wiTECHModuleChrysler\src\wde-services.xml
+						break;
+					case CMD_COPY_ALL_CHANGELIST_FILES :
+						trace('about to backup call the single cmd that copies all of the files in the selected changelist');
+						// no args are required for this command
 						break;
 				}
 				currentCommand = commandToExecute;
@@ -351,6 +345,15 @@
 							processingChangelistFiles = false;
 						}
 						break;
+					case CMD_COPY_ALL_CHANGELIST_FILES :
+						// count the number of instances of "1 File(s) copied" in the result variable and show it to the user in a prompt
+						// compare it with the number of files in the selectedChangelist to make sure they match
+						// and offer to create a zip file of those archived files
+						break;
+					
+					case CMD_CREATE_ZIP_FILE :
+						
+						break;
 				}				
 			}
 			public function nativeProcessCloseErrorStream(event:Object):void {
@@ -396,9 +399,6 @@
 				loginPopup.addEventListener(LoginEvent.TYPE, doLogin);
 			}
 			private function doLogin(event:LoginEvent):void {
-				//processQueue.push(CMD_LOGIN);
-				//callCommand(processQueue.shift());
-				
 				userName = event.un;
 				passWord = event.pw;
 				callCommand(CMD_LOGIN);
@@ -426,7 +426,7 @@
 				file.browseForDirectory("Please specify where your changelist files should be stored.");
 			}
 			private function backupFolderSelected(evt:Event):void {
-				backupFolder = File(evt.currentTarget).nativePath;
+				backupFolder = File(evt.currentTarget).nativePath + "\\" + selectedChangelist.number;
 			}
 			
 			protected function backupFiles_clickHandler(event:MouseEvent):void {
@@ -462,7 +462,6 @@
 					}
 				} while (tokensAtCurrentIndexMatch) 
 				
-				selectedChangelist.commonRootPath = commonPath;
 				var charsToRemove:int = commonPath.length;
 				trace("commonPath: " + commonPath + " is " + charsToRemove + " characters long.");
 				var backupBatch:String = "";
@@ -471,11 +470,13 @@
 					changelistFile.cleanArchivePath(charsToRemove);
 					backupBatch+=changelistFile.getBackupCommand(backupFolder);
 				}
+				
+				backupBatch = "@echo off" + "\n\n" + backupBatch;
 				// stuff this string into a .cmd file and execute it! 
-				trace(backupBatch);
+				trace("writing commands to file for single execution: " + backupBatch);
 				
 				createCopyCmd(copyAllCmdFile, backupBatch);
-
+				callCommand(CMD_COPY_ALL_CHANGELIST_FILES);
 			}
 		]]>
 	</fx:Script>
@@ -512,7 +513,6 @@
 				<s:Label text="specify where you want the files to be saved: {backupFolder}" />
 				<s:Button label="Select" click="browseForBackupFolder_clickHandler(event)" />
 				<s:Button label="Back Up Files" click="backupFiles_clickHandler(event)" enabled="{backupFolder.length > 3}" />
-			
 		</s:NavigatorContent>
 	</mx:ViewStack>
 </s:WindowedApplication>

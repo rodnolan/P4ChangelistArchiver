@@ -9,7 +9,6 @@ package vo {
 		public var status:String;
 		public var description:String;
 		public var cmdData:String;
-		public var commonRootPath:String;
 		
 		public function ChangeList(rawString:String) {
 			this.cmdData = rawString.replace("Change ", "").replace(" on ", delim).replace(" by ", delim).replace(" *", delim).replace("* ", delim);
