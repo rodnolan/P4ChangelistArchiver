@@ -16,6 +16,7 @@
 			
 			import mx.collections.ArrayCollection;
 			import mx.containers.TitleWindow;
+			import mx.controls.Alert;
 			import mx.events.FlexEvent;
 			import mx.managers.PopUpManager;
 			
@@ -33,6 +34,7 @@
 			
 			[Bindable]
 			private var changelistFiles:ArrayCollection;
+			
 			private var currentDepotFile:ChangelistFile;
 			[Bindable]
 			private var processingChangelistFiles:Boolean;
@@ -71,7 +73,8 @@
 			private var processQueue:Array; 
 
 			private var isLoggedIn:Boolean; 
-			
+			private var backupFolderNotSpecified:Boolean;
+
 			private static var CMD_CHECK_LOGIN_STATUS:String = "checkLoginStatus";
 			private static var CMD_LOGIN:String = "login";
 			private static var CMD_GET_CHANGES:String = "getCLs";
@@ -225,16 +228,16 @@
 						//  //NGST/trunk/app/client/flex/wiTECHModuleVW/src/AppVW-app.xml 
 						//  //RodNolanWiTECH/NGST/flex/wiTECHModuleVW/src/AppVW-app.xml 
 						//  C:/P4/RodNolanWiTECH\NGST\flex\wiTECHModuleVW\src\AppVW-app.xml
-						//
+						// note the backslashes in the last path
 						
 						//p4 where //NGST/trunk/app/client/flex/wiTECHModuleVW/src/AppVW-app.xml | sed -e s/\\/\//g
 						//  //NGST/trunk/app/client/flex/wiTECHModuleVW/src/AppVW-app.xml 
 						//  //RodNolanWiTECH/NGST/flex/wiTECHModuleVW/src/AppVW-app.xml 
 						//  C:/P4/RodNolanWiTECH/NGST/flex/wiTECHModuleVW/src/AppVW-app.xml
-						//
+						// note that the backslashes are fixed in this situation
 						
-						// but the "| sed" part doesn't qualify as an argument to p4
-						// so I need to create a middle-man script to handle this
+						// but the "| sed -e s/\\/\//g" part doesn't qualify as an argument to p4
+						// but passing the "where" file path as an argument to a middle-man script will handle this
 						if (!currentDepotFile) {
 							currentDepotFile = changelistFiles.getItemAt(0) as ChangelistFile;
 						}
@@ -242,7 +245,7 @@
 						processArgs[ 1 ] = currentDepotFile.depotPath;
 						break;
 					case CMD_CLEAN_PATHS : 
-						// convertBackslashes.cmd C:/P4/RodNolanWiTECH\NGST\flex\wiTECHModuleVW\src\AppVW-app.xml
+						// convertBackslashes.cmd C:/folder1/folder2\anotherFolder\anotherFodler2\file.ext
 //						if (!currentDepotFile || changelistFiles.getItemIndex(currentDepotFile) != 0) {
 //							currentDepotFile = changelistFiles.getItemAt(0) as ChangelistFile;
 //						}
@@ -346,16 +349,34 @@
 						}
 						break;
 					case CMD_COPY_ALL_CHANGELIST_FILES :
-						// count the number of instances of "1 File(s) copied" in the result variable and show it to the user in a prompt
-						// compare it with the number of files in the selectedChangelist to make sure they match
-						// and offer to create a zip file of those archived files
+						
+						var filesCopied:uint = getMatchCount("1 File(s) copied", result);
+						var msg:String;
+						var title:String;
+						if (filesCopied > 0) {
+							if (filesCopied == changelistFiles.length) {
+								msg = "all files copied to " + backupFolder;
+								title = "Changelist backed up successfully";
+							} else {
+								msg = "Only " + filesCopied + " of " + changelistFiles.length + " were copied to " + backupFolder;
+								title = "Changelist back up incomplete!";
+							}
+							Alert.show(msg, title);
+							// should provide a link to the folder and/or offer to create a zip file of the archived files
+						}
 						break;
 					
 					case CMD_CREATE_ZIP_FILE :
-						
+						// add a readme file to the folder that lists the root path where these files should be extracted to
 						break;
 				}				
 			}
+			
+			private function getMatchCount(search:String, target:String):uint {
+				var arr:Array = target.split( search ) 
+				return arr.length - 1;
+			}
+			
 			public function nativeProcessCloseErrorStream(event:Object):void {
 				trace("nativeProcessCloseErrorStream()");			
 			}
@@ -425,11 +446,22 @@
 				file.addEventListener(Event.SELECT, backupFolderSelected);
 				file.browseForDirectory("Please specify where your changelist files should be stored.");
 			}
+			
 			private function backupFolderSelected(evt:Event):void {
 				backupFolder = File(evt.currentTarget).nativePath + "\\" + selectedChangelist.number;
+				if (backupFolderNotSpecified) {
+					backupFolderNotSpecified = false;
+					backupFiles_clickHandler();
+				}
 			}
 			
-			protected function backupFiles_clickHandler(event:MouseEvent):void {
+			protected function backupFiles_clickHandler(event:MouseEvent=null):void {
+				
+				if (backupFolder == null) {
+					backupFolderNotSpecified = true;
+					browseForBackupFolder_clickHandler(event);
+					return;
+				}
 				trace(changelistFiles.source);
 				var commonPath:String = "";
 				var currentTokenIndex:int = 0;
@@ -483,7 +515,6 @@
 		
 	<mx:TabBar dataProvider="{mainVS}" />
 	<mx:ViewStack id="mainVS" width="100%" height="100%">
-		
 		<s:NavigatorContent id="vChangelists" label="List your changelists" creationComplete="changelists_creationCompleteHandler(event)">
 			<s:layout>
 				<s:VerticalLayout />
@@ -512,7 +543,7 @@
 				</s:DataGrid>
 				<s:Label text="specify where you want the files to be saved: {backupFolder}" />
 				<s:Button label="Select" click="browseForBackupFolder_clickHandler(event)" />
-				<s:Button label="Back Up Files" click="backupFiles_clickHandler(event)" enabled="{backupFolder.length > 3}" />
+				<s:Button label="Back Up Files" click="backupFiles_clickHandler(event)" />
 		</s:NavigatorContent>
 	</mx:ViewStack>
 </s:WindowedApplication>

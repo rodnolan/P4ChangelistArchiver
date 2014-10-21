@@ -1,3 +1,5 @@
+:: this might still be useful if parsing the results from the all in one command turns out to be painful
+
 set src=C:\P4\RodNolanWiTECH\NGST\flex
 set dest=C:\Users\rodn\Desktop\3170-latest-today
 echo f | xcopy /f /y %src%\wiTECHLibrary\src-test\com\dcctools\witech\common\application\constant\ServerModesTest.as %dest%\wiTECHLibrary\src-test\com\dcctools\witech\common\application\constant\ServerModesTest.as
