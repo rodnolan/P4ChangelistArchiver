@@ -59,6 +59,8 @@
 			private var passWord:String;
 
 			private var loginPopup:LoginPopup;
+			private var filesCopiedPopup:FilesCopiedPopup;
+			
 			
 			private var p4Exe:File; 
 			private var slashConverter:File; 
@@ -74,6 +76,9 @@
 
 			private var isLoggedIn:Boolean; 
 			private var backupFolderNotSpecified:Boolean;
+			
+			[Bindable]
+			private var filesCopied:uint
 
 			private static var CMD_CHECK_LOGIN_STATUS:String = "checkLoginStatus";
 			private static var CMD_LOGIN:String = "login";
@@ -158,7 +163,8 @@
 				try {
 					stream.open(file, FileMode.WRITE);
 					stream.writeUTFBytes(contents);
-					stream.close();					
+					stream.close();
+					trace("created copy command file at: " + file.nativePath);
 				} catch (error:Error) {
 					trace("could not create the cmd file for copying changelist files ");
 				}
@@ -246,9 +252,6 @@
 						break;
 					case CMD_CLEAN_PATHS : 
 						// convertBackslashes.cmd C:/folder1/folder2\anotherFolder\anotherFodler2\file.ext
-//						if (!currentDepotFile || changelistFiles.getItemIndex(currentDepotFile) != 0) {
-//							currentDepotFile = changelistFiles.getItemAt(0) as ChangelistFile;
-//						}
 						processArgs[ 0 ] = currentDepotFile.localPath;
 						break;
 					case CMD_BACKUP_CHANGELIST_FILES :
@@ -349,21 +352,8 @@
 						}
 						break;
 					case CMD_COPY_ALL_CHANGELIST_FILES :
-						
-						var filesCopied:uint = getMatchCount("1 File(s) copied", result);
-						var msg:String;
-						var title:String;
-						if (filesCopied > 0) {
-							if (filesCopied == changelistFiles.length) {
-								msg = "all files copied to " + backupFolder;
-								title = "Changelist backed up successfully";
-							} else {
-								msg = "Only " + filesCopied + " of " + changelistFiles.length + " were copied to " + backupFolder;
-								title = "Changelist back up incomplete!";
-							}
-							Alert.show(msg, title);
-							// should provide a link to the folder and/or offer to create a zip file of the archived files
-						}
+						filesCopied += getMatchCount("1 File(s) copied", result);
+						showBackupProgressDialog(filesCopied, changelistFiles.length);
 						break;
 					
 					case CMD_CREATE_ZIP_FILE :
@@ -380,6 +370,7 @@
 			public function nativeProcessCloseErrorStream(event:Object):void {
 				trace("nativeProcessCloseErrorStream()");			
 			}
+			
 			public function nativeProcessExit(event:NativeProcessExitEvent):void {
 				trace("nativeProcessExit code: " + event.exitCode);
 				removeListeners();
@@ -388,6 +379,7 @@
 					callCommand(cmdToExecute);
 				}
 			}
+			
 			public function nativeProcessError(event:Object):void {
 				trace("nativeProcessError() type = {0}", event.type);
 				var result:String = process.standardError.readUTFBytes(process.standardError.bytesAvailable);
@@ -412,6 +404,16 @@
 			}
 
 			
+			private function showBackupProgressDialog(filesCopied:uint, ofTotal:uint):void {
+				if (filesCopiedPopup == null) {
+					filesCopiedPopup = PopUpManager.createPopUp(this, FilesCopiedPopup, true) as FilesCopiedPopup;
+					PopUpManager.centerPopUp(filesCopiedPopup);
+					filesCopiedPopup.popupTitle = "Archiving changelist...";
+				} 
+				
+				filesCopiedPopup.fileCopyMessage = filesCopied + " of " + ofTotal + " files copied."
+				// should provide a link to the folder and/or offer to create a zip file of the archived files
+			}
 			private function showLoginPrompt():void {
 				loginPopup = PopUpManager.createPopUp(this, LoginPopup, true) as LoginPopup;
 				PopUpManager.centerPopUp(loginPopup);
@@ -419,6 +421,7 @@
 				loginPopup.popupTitle = "Please login to Perforce";
 				loginPopup.addEventListener(LoginEvent.TYPE, doLogin);
 			}
+			
 			private function doLogin(event:LoginEvent):void {
 				userName = event.un;
 				passWord = event.pw;
@@ -430,15 +433,6 @@
 			private function changelists_selectionChangeHandler(event:GridSelectionEvent):void {
 				selectedChangelist = event.target.selectedItem as ChangeList;
 				callCommand(CMD_DESCRIBE_CL);
-			}
-			private function getStarted_creationCompleteHandler(event:FlexEvent):void {
-				
-			}
-			private function changelists_creationCompleteHandler(event:FlexEvent):void {
-				
-			}
-			private function pathsManager_creationCompleteHandler(event:FlexEvent):void {
-				
 			}
 
 			private function browseForBackupFolder_clickHandler(event:MouseEvent):void {
@@ -515,7 +509,7 @@
 		
 	<mx:TabBar dataProvider="{mainVS}" />
 	<mx:ViewStack id="mainVS" width="100%" height="100%">
-		<s:NavigatorContent id="vChangelists" label="List your changelists" creationComplete="changelists_creationCompleteHandler(event)">
+		<s:NavigatorContent id="vChangelists" label="List your changelists">
 			<s:layout>
 				<s:VerticalLayout />
 			</s:layout>
