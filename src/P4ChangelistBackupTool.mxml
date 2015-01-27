@@ -166,7 +166,19 @@
 					stream.close();
 					trace("created copy command file at: " + file.nativePath);
 				} catch (error:Error) {
-					trace("could not create the cmd file for copying changelist files ");
+					trace("could not create the cmd file for copying changelist files");
+				}
+			}
+
+			private function createRestoreBatch(file:File, contents:String="This file is generated at runtime"):void {
+				var stream:FileStream = new FileStream();
+				try {
+					stream.open(file, FileMode.WRITE);
+					stream.writeUTFBytes(contents);
+					stream.close();
+					trace("created copy command file at: " + file.nativePath);
+				} catch (error:Error) {
+					trace("could not create the cmd file to restore the changelist files");
 				}
 			}
 			
@@ -244,7 +256,7 @@
 						
 						// but the "| sed -e s/\\/\//g" part doesn't qualify as an argument to p4
 						// but passing the "where" file path as an argument to a middle-man script will handle this
-						if (!currentDepotFile) {
+						if (!currentDepotFile && changelistFiles.length > 0) {
 							currentDepotFile = changelistFiles.getItemAt(0) as ChangelistFile;
 						}
 						processArgs[ 0 ] = "where";
@@ -405,11 +417,9 @@
 
 			
 			private function showBackupProgressDialog(filesCopied:uint, ofTotal:uint):void {
-				if (filesCopiedPopup == null) {
-					filesCopiedPopup = PopUpManager.createPopUp(this, FilesCopiedPopup, true) as FilesCopiedPopup;
-					PopUpManager.centerPopUp(filesCopiedPopup);
-					filesCopiedPopup.popupTitle = "Archiving changelist...";
-				} 
+				filesCopiedPopup = PopUpManager.createPopUp(this, FilesCopiedPopup, true) as FilesCopiedPopup;
+				PopUpManager.centerPopUp(filesCopiedPopup);
+				filesCopiedPopup.popupTitle = "Archiving changelist...";
 				
 				filesCopiedPopup.fileCopyMessage = filesCopied + " of " + ofTotal + " files copied."
 				// should provide a link to the folder and/or offer to create a zip file of the archived files
@@ -491,10 +501,12 @@
 				var charsToRemove:int = commonPath.length;
 				trace("commonPath: " + commonPath + " is " + charsToRemove + " characters long.");
 				var backupBatch:String = "";
+				var restoreBatch:String = "";
 				for (var j:int=0; j < changelistFiles.length; j++) {
 					var changelistFile:ChangelistFile = changelistFiles.getItemAt(j) as ChangelistFile;
 					changelistFile.cleanArchivePath(charsToRemove);
 					backupBatch+=changelistFile.getBackupCommand(backupFolder);
+					restoreBatch+=changelistFile.getRestoreCommand();
 				}
 				
 				backupBatch = "@echo off" + "\n\n" + backupBatch;
@@ -503,17 +515,21 @@
 				
 				createCopyCmd(copyAllCmdFile, backupBatch);
 				callCommand(CMD_COPY_ALL_CHANGELIST_FILES);
+				
+				trace("writing restore commands: " + restoreBatch);
+				var restoreFile:File = new File(backupFolder + "\\restoreToWorkspace.bat");
+				createRestoreBatch(restoreFile, restoreBatch);
+				
 			}
 		]]>
 	</fx:Script>
 		
 	<mx:TabBar dataProvider="{mainVS}" />
 	<mx:ViewStack id="mainVS" width="100%" height="100%">
-		<s:NavigatorContent id="vChangelists" label="List your changelists">
+		<s:NavigatorContent id="vChangelists" label="Your pending changelists">
 			<s:layout>
 				<s:VerticalLayout />
 			</s:layout>
-			<s:Label text="your pending changelists" />
 			<s:DataGrid dataProvider="{changelists}" width="100%" height="100%" selectionChange="changelists_selectionChangeHandler(event)">
 				<s:columns>
 					<s:ArrayList>
@@ -524,20 +540,20 @@
 					</s:ArrayList>
 				</s:columns>
 			</s:DataGrid>
-				<s:Label text="the files in changelist #{selectedChangelist.number}" />
-				<s:DataGrid id="dgChangeListFiles" dataProvider="{changelistFiles}" width="100%" height="100%" enabled="{!processingChangelistFiles}">
-					<s:columns>
-						<s:ArrayList>
-							<s:GridColumn dataField="depotPath" />
-							<s:GridColumn dataField="localPath" />
-							<s:GridColumn dataField="revisionNumber" width="75" />
-							<s:GridColumn dataField="action" width="75" />
-						</s:ArrayList>
-					</s:columns>
-				</s:DataGrid>
-				<s:Label text="specify where you want the files to be saved: {backupFolder}" />
-				<s:Button label="Select" click="browseForBackupFolder_clickHandler(event)" />
-				<s:Button label="Back Up Files" click="backupFiles_clickHandler(event)" />
+			<s:Label text="the files in changelist #{selectedChangelist.number}" />
+			<s:DataGrid id="dgChangeListFiles" dataProvider="{changelistFiles}" width="100%" height="100%" enabled="{!processingChangelistFiles}">
+				<s:columns>
+					<s:ArrayList>
+						<s:GridColumn dataField="depotPath" />
+						<s:GridColumn dataField="localPath" />
+						<s:GridColumn dataField="revisionNumber" width="75" />
+						<s:GridColumn dataField="action" width="75" />
+					</s:ArrayList>
+				</s:columns>
+			</s:DataGrid>
+			<s:Label text="specify where you want the files to be saved: {backupFolder}" />
+			<s:Button label="Select" click="browseForBackupFolder_clickHandler(event)" />
+			<s:Button label="Back Up Files" click="backupFiles_clickHandler(event)" />
 		</s:NavigatorContent>
 	</mx:ViewStack>
 </s:WindowedApplication>

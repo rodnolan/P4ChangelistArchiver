@@ -52,13 +52,19 @@ package vo {
 		
 		public function getBackupCommand(baseFolder:String):String {			
 			var destPath:String = baseFolder.replace( /\\/g, '/') + "/";
-			
-			
 			var lp:String = localPath.replace( /\//ig, "\\" );
 			var dp:String = destPath.replace( /\//ig, "\\" );
 			var ap:String = archivePath.replace( /\//ig, "\\" );
 			
-			return "echo f | xcopy /f /y " + lp + " " + dp + ap + "\n";
+			return 'echo f | xcopy /f /y "' + lp + '" "' + dp + ap + '"\n';
 		}
+		
+		public function getRestoreCommand():String {			
+			var lp:String = localPath.replace( /\//ig, "\\" );
+			var ap:String = archivePath.replace( /\//ig, "\\" );
+			
+			return 'echo f | xcopy /f /y "' + ap + '" "' + lp + '"\n';
+		}
+		
 	}
 }
