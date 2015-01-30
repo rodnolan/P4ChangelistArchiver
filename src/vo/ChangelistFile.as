@@ -59,11 +59,16 @@ package vo {
 			return 'echo f | xcopy /f /y "' + lp + '" "' + dp + ap + '"\n';
 		}
 		
-		public function getRestoreCommand():String {			
+		public function getRestoreCommand(changelistNumber:String):String {			
 			var lp:String = localPath.replace( /\//ig, "\\" );
 			var ap:String = archivePath.replace( /\//ig, "\\" );
+			var dp:String = depotPath.replace( /\//ig, "\\" );
 			
-			return 'echo f | xcopy /f /y "' + ap + '" "' + lp + '"\n';
+			var readOnlyOFF:String='REM attrib -r "' + lp + '"\n';
+			var copy:String='echo f | xcopy /f /y "' + ap + '" "' + lp + '"\n';
+			var p4reopen:String='p4 reopen -c ' +changelistNumber+ ' "' + dp + '"\n\n';
+			
+			return readOnlyOFF + copy + p4reopen; 
 		}
 		
 	}
